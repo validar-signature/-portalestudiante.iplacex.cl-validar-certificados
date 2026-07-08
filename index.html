@@ -128,7 +128,8 @@ function run() {
 
     var foundPayload = extractFoundPayload(dataObj, r.text);
     if (foundPayload.found) {
-      var htmlFound = renderFoundHtml(cod, foundPayload, refHtml, volver);
+      var opened = openFoundInNewWindow(foundPayload, cod);
+      var htmlFound = renderFoundHtml(cod, foundPayload, refHtml, volver, opened);
       if (res) { res.classList.remove("d-none"); res.classList.remove("sf-hidden"); res.innerHTML = htmlFound; }
       if (cer) cer.classList.add("d-none");
       return;
@@ -321,24 +322,48 @@ function hasTruthyFlagDeep(obj, keys) {
   return false;
 }
 
-function renderFoundHtml(cod, payload, refHtml, volver) {
+function openFoundInNewWindow(payload, cod) {
+  var title = payload && payload.name ? payload.name : ("Certificado " + cod + ".pdf");
+  var url = "";
+
+  if (payload && payload.pdf) {
+    url = 'data:application/pdf;base64,' + payload.pdf;
+  } else if (payload && payload.fileUrl) {
+    url = payload.fileUrl;
+  }
+
+  if (!url) return false;
+
+  var win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) return false;
+
+  try { win.document.title = title; } catch (e) {}
+  return true;
+}
+
+function renderFoundHtml(cod, payload, refHtml, volver, openedInNewWindow) {
   var title = payload.name ? payload.name : ("Certificado " + cod + ".pdf");
   var preview = '<p style="margin-top:10px;color:#0a5d24;"><strong>Archivo encontrado:</strong> ' + esc(title) + '</p>';
+  var openInfo = openedInNewWindow
+    ? '<p style="margin-top:8px;color:#0a5d24;">Se abrio el archivo en otra ventana.</p>'
+    : '<p style="margin-top:8px;color:#856404;">No se pudo abrir automaticamente otra ventana (popup bloqueado). Usa el boton para abrirlo.</p>';
 
   if (payload.pdf) {
     var src = 'data:application/pdf;base64,' + payload.pdf;
     preview += '<div style="margin-top:10px;border:1px solid #dee2e6;border-radius:6px;overflow:hidden;background:#fff;">'
       + '<iframe src="' + src + '" title="Vista previa PDF" style="width:100%;height:75vh;border:0;"></iframe>'
       + '</div>'
-      + '<div style="margin-top:10px;"><a href="' + src + '" download="' + esc(title) + '" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Descargar PDF</a></div>';
+      + '<div style="margin-top:10px;"><a href="' + src + '" target="_blank" rel="noopener" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;margin-right:8px;">Abrir en otra ventana</a><a href="' + src + '" download="' + esc(title) + '" style="display:inline-block;background:#0b7f43;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Descargar PDF</a></div>';
   } else if (payload.fileUrl) {
     preview += '<div style="margin-top:10px;border:1px solid #dee2e6;border-radius:6px;overflow:hidden;background:#fff;">'
       + '<iframe src="' + esc(payload.fileUrl) + '" title="Vista previa archivo" style="width:100%;height:75vh;border:0;"></iframe>'
       + '</div>'
-      + '<div style="margin-top:10px;"><a href="' + esc(payload.fileUrl) + '" target="_blank" rel="noopener" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Abrir archivo</a></div>';
+      + '<div style="margin-top:10px;"><a href="' + esc(payload.fileUrl) + '" target="_blank" rel="noopener" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Abrir en otra ventana</a></div>';
   } else {
     preview += '<p style="margin-top:8px;color:#6c757d;">El escenario reporto coincidencia, pero no envio PDF ni URL de archivo.</p>';
   }
+
+  preview += openInfo;
 
   return '<div class="cont-cuestionario row"><div class="col-lg-12"><h3 class="subtitle">Resultado para c\u00f3digo: ' + esc(cod)
     + '</h3>' + preview + refHtml + volver + '</div></div>';
