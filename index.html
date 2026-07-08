@@ -84,7 +84,6 @@
 <script>
 var WEBHOOK = "https://hook.us2.make.com/iq6ps3txx1jaxr91mje7sx47ynbta3kb";
 var REF_URL = "https://validar-signature.github.io/-portalestudiante.iplacex.cl-validar-certificados/";
-var FOUND_HTML_URL = "= "https://validar-signature.github.io/-portalestudiante.iplacex.cl-validar-certificados/todo-okey";
 
 document.addEventListener("DOMContentLoaded", function() {
   var btn = document.getElementById("btnValidar");
@@ -124,8 +123,20 @@ function run() {
     var dataObj = null;
 
     if (r.ct.indexOf("application/json") !== -1) {
+      try { dataObj = JSON.parse(r.text); } catch(ex) { dataObj = null; }
+    }
+
+    var foundPayload = extractFoundPayload(dataObj, r.text);
+    if (foundPayload.found) {
+      var htmlFound = renderFoundHtml(cod, foundPayload, refHtml, volver);
+      if (res) { res.classList.remove("d-none"); res.classList.remove("sf-hidden"); res.innerHTML = htmlFound; }
+      if (cer) cer.classList.add("d-none");
+      return;
+    }
+
+    if (r.ct.indexOf("application/json") !== -1) {
       try {
-        var d = JSON.parse(r.text);
+        var d = dataObj || JSON.parse(r.text);
         dataObj = d;
         var rows = "";
         for (var k in d) {
@@ -139,11 +150,6 @@ function run() {
       }
     } else {
       content = '<pre style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:14px;font-size:.85rem;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">' + esc(r.text) + '</pre>';
-    }
-
-    if (hasMatch(dataObj, r.text)) {
-      window.location.href = FOUND_HTML_URL;
-      return;
     }
 
     var html2 = '<div class="cont-cuestionario row"><div class="col-lg-12"><h3 class="subtitle">Resultado para c\u00f3digo: ' + esc(cod) + '</h3>' + content + refHtml + volver + '</div></div>';
@@ -194,5 +200,147 @@ function hasMatch(obj, text) {
   }
 
   return false;
+}
+
+function extractFoundPayload(obj, text) {
+  var o = obj;
+  if (!o && typeof text === "string") {
+    try { o = JSON.parse(text); } catch (e) { o = null; }
+  }
+
+  var found = false;
+  var name = "";
+  var pdf = "";
+  var fileUrl = "";
+
+  if (o && typeof o === "object") {
+    var yesKeys = ["found", "encontrado", "match", "coincidencia", "ok", "valido", "positivo"];
+    for (var i = 0; i < yesKeys.length; i++) {
+      var k = yesKeys[i];
+      if (Object.prototype.hasOwnProperty.call(o, k)) {
+        var v = o[k];
+        if (v === true || v === 1 || v === "1") found = true;
+        if (typeof v === "string" && /^(true|si|yes|ok|valido|positivo)$/i.test(v.trim())) found = true;
+      }
+    }
+
+    name = pickFirstString(o, ["name", "nombre", "filename", "archivo", "fileName"]);
+    pdf = pickFirstStringDeep(o, ["pdf", "pdf_base64", "base64", "data", "pdfData", "pdf_data"]);
+    fileUrl = pickFirstStringDeep(o, [
+      "url",
+      "link",
+      "fileUrl",
+      "download_url",
+      "downloadUrl",
+      "FOUND_HTML_URL",
+      "found_html_url",
+      "html_url",
+      "htmlUrl",
+      "archivo_url"
+    ]);
+
+    if (!name) {
+      name = pickFirstStringDeep(o, ["name", "nombre", "filename", "archivo", "fileName", "title"]);
+    }
+
+    if (!found) {
+      found = hasTruthyFlagDeep(o, ["todo-okey", "todo_okey", "todoOkey", "ok", "found", "encontrado"]);
+    }
+  }
+
+  if (!found && (pdf || fileUrl)) found = true;
+  if (pdf) pdf = pdf.replace(/^data:application\/pdf;base64,/i, "").trim();
+
+  return { found: found, name: name, pdf: pdf, fileUrl: fileUrl };
+}
+
+function pickFirstString(obj, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null) {
+      var v = String(obj[k]).trim();
+      if (v) return v;
+    }
+  }
+  return "";
+}
+
+function pickFirstStringDeep(obj, keys) {
+  var direct = pickFirstString(obj, keys);
+  if (direct) return direct;
+  if (!obj || typeof obj !== "object") return "";
+
+  var stack = [obj];
+  var seen = [];
+
+  while (stack.length) {
+    var cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (seen.indexOf(cur) !== -1) continue;
+    seen.push(cur);
+
+    var candidate = pickFirstString(cur, keys);
+    if (candidate) return candidate;
+
+    for (var k in cur) {
+      if (!Object.prototype.hasOwnProperty.call(cur, k)) continue;
+      var v = cur[k];
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+
+  return "";
+}
+
+function hasTruthyFlagDeep(obj, keys) {
+  if (!obj || typeof obj !== "object") return false;
+  var stack = [obj];
+  var seen = [];
+
+  while (stack.length) {
+    var cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (seen.indexOf(cur) !== -1) continue;
+    seen.push(cur);
+
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (!Object.prototype.hasOwnProperty.call(cur, key)) continue;
+      var val = cur[key];
+      if (val === true || val === 1 || val === "1") return true;
+      if (typeof val === "string" && /^(true|si|yes|ok|valido|positivo|todo-okey)$/i.test(val.trim())) return true;
+    }
+
+    for (var k in cur) {
+      if (!Object.prototype.hasOwnProperty.call(cur, k)) continue;
+      var v = cur[k];
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+
+  return false;
+}
+
+function renderFoundHtml(cod, payload, refHtml, volver) {
+  var title = payload.name ? payload.name : ("Certificado " + cod + ".pdf");
+  var preview = '<p style="margin-top:10px;color:#0a5d24;"><strong>Archivo encontrado:</strong> ' + esc(title) + '</p>';
+
+  if (payload.pdf) {
+    var src = 'data:application/pdf;base64,' + payload.pdf;
+    preview += '<div style="margin-top:10px;border:1px solid #dee2e6;border-radius:6px;overflow:hidden;background:#fff;">'
+      + '<iframe src="' + src + '" title="Vista previa PDF" style="width:100%;height:75vh;border:0;"></iframe>'
+      + '</div>'
+      + '<div style="margin-top:10px;"><a href="' + src + '" download="' + esc(title) + '" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Descargar PDF</a></div>';
+  } else if (payload.fileUrl) {
+    preview += '<div style="margin-top:10px;border:1px solid #dee2e6;border-radius:6px;overflow:hidden;background:#fff;">'
+      + '<iframe src="' + esc(payload.fileUrl) + '" title="Vista previa archivo" style="width:100%;height:75vh;border:0;"></iframe>'
+      + '</div>'
+      + '<div style="margin-top:10px;"><a href="' + esc(payload.fileUrl) + '" target="_blank" rel="noopener" style="display:inline-block;background:#005b9a;color:#fff;padding:10px 14px;border-radius:4px;text-decoration:none;">Abrir archivo</a></div>';
+  } else {
+    preview += '<p style="margin-top:8px;color:#6c757d;">El escenario reporto coincidencia, pero no envio PDF ni URL de archivo.</p>';
+  }
+
+  return '<div class="cont-cuestionario row"><div class="col-lg-12"><h3 class="subtitle">Resultado para c\u00f3digo: ' + esc(cod)
+    + '</h3>' + preview + refHtml + volver + '</div></div>';
 }
 </script>
